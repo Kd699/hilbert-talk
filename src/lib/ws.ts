@@ -3,7 +3,7 @@ import type { ClientMessage, ServerMessage } from './types'
 type MessageHandler = (msg: ServerMessage) => void
 type StatusHandler = (status: 'connecting' | 'connected' | 'disconnected') => void
 
-const VPS_HOST = '178.104.52.148:3001'
+const VPS_HOST = 'dense-voluntary-satisfaction-pty.trycloudflare.com'
 
 export class HilbertSocket {
   private ws: WebSocket | null = null

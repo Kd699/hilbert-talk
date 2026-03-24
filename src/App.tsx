@@ -15,8 +15,9 @@ function App() {
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
   const [sessions, setSessions] = useState<SessionMeta[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
-  const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([])
   const [activeSessionName, setActiveSessionName] = useState('')
+  const [initialHistory, setInitialHistory] = useState<Array<{role: string, content: string}>>([])
+  const streamHandlerRef = useRef<((event: StreamEvent) => void) | null>(null)
 
   const socketRef = useRef<HilbertSocket | null>(null)
 
@@ -43,14 +44,13 @@ function App() {
       case 'session_created':
         setView({ name: 'chat', sessionId: msg.sessionId })
         setActiveSessionName(msg.name)
-        setStreamEvents([])
         break
       case 'session_resumed':
+        setInitialHistory(msg.history || [])
         setView({ name: 'chat', sessionId: msg.sessionId })
-        setStreamEvents([])
         break
       case 'stream_event':
-        setStreamEvents(prev => [...prev, msg.event])
+        streamHandlerRef.current?.(msg.event)
         break
       case 'error':
         console.error('[ws] Error:', msg.message)
@@ -104,7 +104,7 @@ function App() {
 
   const handleBack = () => {
     setView({ name: 'gallery' })
-    setStreamEvents([])
+    streamHandlerRef.current = null
   }
 
   const handleSignOut = async () => {
@@ -175,9 +175,9 @@ function App() {
 
       {view.name === 'chat' && (
         <ChatView
-          sessionId={view.sessionId}
           onSendMessage={handleSendMessage}
-          streamEvents={streamEvents}
+          onStreamHandler={(handler) => { streamHandlerRef.current = handler }}
+          initialHistory={initialHistory}
         />
       )}
     </div>

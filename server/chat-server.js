@@ -23,15 +23,19 @@ let server;
 const keyPath = '/home/claude/key.pem';
 const certPath = '/home/claude/cert.pem';
 
-if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-  server = https.createServer({
-    key: fs.readFileSync(keyPath),
-    cert: fs.readFileSync(certPath),
-  }, app);
-  console.log('[server] Using HTTPS');
-} else {
+try {
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    server = https.createServer({
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath),
+    }, app);
+    console.log('[server] Using HTTPS');
+  } else {
+    throw new Error('no certs');
+  }
+} catch {
   server = http.createServer(app);
-  console.log('[server] Using HTTP (no SSL certs found)');
+  console.log('[server] Using HTTP');
 }
 
 // WebSocket server
@@ -97,12 +101,9 @@ wss.on('connection', (ws) => {
         }
 
         case 'new_session': {
-          const onEvent = (event) => send({ type: 'stream_event', event });
-          const sessionId = await pool.startSession(null, onEvent);
+          const sessionId = pool.createSession();
           clientSessions.set(ws, sessionId);
-
-          const session = sessionStore.getSession(sessionId);
-          send({ type: 'session_created', sessionId, name: session?.name || 'New Session' });
+          send({ type: 'session_created', sessionId, name: 'New Session' });
           break;
         }
 
@@ -112,16 +113,6 @@ wss.on('connection', (ws) => {
             send({ type: 'error', message: 'sessionId required' });
             break;
           }
-
-          const onEvent = (event) => send({ type: 'stream_event', event });
-
-          if (pool.isActive(sessionId)) {
-            // Session already running, just attach
-            pool.updateEventHandler(sessionId, onEvent);
-          } else {
-            await pool.startSession(sessionId, onEvent);
-          }
-
           clientSessions.set(ws, sessionId);
           send({ type: 'session_resumed', sessionId });
           break;
@@ -131,11 +122,6 @@ wss.on('connection', (ws) => {
           const sessionId = clientSessions.get(ws);
           if (!sessionId) {
             send({ type: 'error', message: 'No active session. Create or resume one first.' });
-            break;
-          }
-
-          if (!pool.isActive(sessionId)) {
-            send({ type: 'error', message: 'Session process not running. Resume it first.', code: 'SESSION_DEAD' });
             break;
           }
 
@@ -152,14 +138,14 @@ wss.on('connection', (ws) => {
             sessionStore.updateSession(sessionId, { name: autoName });
           }
 
-          pool.sendMessage(sessionId, text);
+          const onEvent = (event) => send({ type: 'stream_event', event });
+          await pool.sendMessage(sessionId, text, onEvent);
           break;
         }
 
         case 'stop_session': {
           const sessionId = clientSessions.get(ws);
           if (sessionId) {
-            pool.stopSession(sessionId);
             clientSessions.delete(ws);
             send({ type: 'session_stopped', sessionId });
           }

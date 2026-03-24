@@ -3,9 +3,8 @@ import type { ChatMessage, ToolCallInfo, StreamEvent, ContentBlock } from '../li
 import { renderContent } from '../lib/markdown'
 
 interface ChatViewProps {
-  sessionId: string
   onSendMessage: (text: string) => void
-  streamEvents: StreamEvent[]
+  onStreamHandler: (handler: (event: StreamEvent) => void) => void
 }
 
 interface ParsedBlock {
@@ -17,7 +16,7 @@ interface ParsedBlock {
   isRunning?: boolean
 }
 
-export function ChatView({ onSendMessage, streamEvents }: ChatViewProps) {
+export function ChatView({ onSendMessage, onStreamHandler }: ChatViewProps) {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [currentBlocks, setCurrentBlocks] = useState<ParsedBlock[]>([])
@@ -48,102 +47,123 @@ export function ChatView({ onSendMessage, streamEvents }: ChatViewProps) {
     }
   }, [error])
 
-  // Process stream events
+  // Keep handler ref fresh so closure always has latest state
+  const handleStreamRef = useRef(handleStreamEvent)
+  handleStreamRef.current = handleStreamEvent
+
+  // Register stream event handler -- called directly from WS, no batching
   useEffect(() => {
-    if (streamEvents.length === 0) return
-    const event = streamEvents[streamEvents.length - 1]
-    handleStreamEvent(event)
-  }, [streamEvents.length])
+    onStreamHandler((event: StreamEvent) => handleStreamRef.current(event))
+    return () => onStreamHandler(() => {})
+  }, [])
 
   function handleStreamEvent(event: StreamEvent) {
-    switch (event.type) {
+    // Events arrive either wrapped { type: 'stream_event', event: {...} }
+    // or unwrapped { type: 'content_block_delta', ... }
+    // Normalize: if it's a known inner type, handle directly
+    // Unwrap if needed -- events arrive either wrapped or unwrapped
+    let ce: any = event
+    if (event.type === 'stream_event' && (event as any).event) {
+      ce = (event as any).event
+    }
+
+    switch (ce.type) {
       case 'system':
         // Session initialized
         break
 
-      case 'stream_event': {
-        const ce = event.event
-        if (!ce) break
+      case 'message_start': {
+        setIsStreaming(true)
+        setCurrentBlocks([])
+        break
+      }
 
-        if (ce.type === 'message_start') {
-          setIsStreaming(true)
-          setCurrentBlocks([])
-        } else if (ce.type === 'content_block_start') {
-          const block = ce.content_block
-          if (block?.type === 'text') {
-            setCurrentBlocks(prev => [...prev, { type: 'text', text: '' }])
-          } else if (block?.type === 'tool_use') {
-            setCurrentBlocks(prev => [...prev, {
-              type: 'tool_use',
-              toolName: block.name,
-              toolInput: '',
-              isRunning: true,
-            }])
-          }
-        } else if (ce.type === 'content_block_delta') {
-          const delta = ce.delta
-          if (delta?.type === 'text_delta' && delta.text) {
-            setCurrentBlocks(prev => {
-              const updated = [...prev]
-              const last = updated[updated.length - 1]
-              if (last?.type === 'text') {
-                last.text = (last.text || '') + delta.text
-              }
-              return updated
-            })
-          } else if (delta?.type === 'input_json_delta' && delta.partial_json) {
-            setCurrentBlocks(prev => {
-              const updated = [...prev]
-              const last = updated[updated.length - 1]
-              if (last?.type === 'tool_use') {
-                last.toolInput = (last.toolInput || '') + delta.partial_json
-              }
-              return updated
-            })
-          }
-        } else if (ce.type === 'content_block_stop') {
-          // Block finished
+      case 'content_block_start': {
+        const block = ce.content_block
+        if (block?.type === 'text') {
+          setCurrentBlocks(prev => [...prev, { type: 'text', text: '' }])
+        } else if (block?.type === 'tool_use') {
+          setCurrentBlocks(prev => [...prev, {
+            type: 'tool_use',
+            toolName: block.name,
+            toolInput: '',
+            isRunning: true,
+          }])
+        }
+        break
+      }
+
+      case 'content_block_delta': {
+        const delta = ce.delta
+        if (delta?.type === 'text_delta' && delta.text) {
           setCurrentBlocks(prev => {
-            const updated = [...prev]
-            const last = updated[updated.length - 1]
-            if (last?.type === 'tool_use') {
-              last.isRunning = false
+            if (prev.length === 0) return prev
+            const updated = prev.slice()
+            const last = { ...updated[updated.length - 1] }
+            if (last.type === 'text') {
+              last.text = (last.text || '') + delta.text
             }
+            updated[updated.length - 1] = last
             return updated
           })
-        } else if (ce.type === 'message_stop') {
-          // Full message complete -- commit to messages
+        } else if (delta?.type === 'input_json_delta' && delta.partial_json) {
           setCurrentBlocks(prev => {
-            if (prev.length > 0) {
-              const textParts = prev.filter(b => b.type === 'text').map(b => b.text || '')
-              const tools: ToolCallInfo[] = prev
-                .filter(b => b.type === 'tool_use')
-                .map((b, i) => ({
-                  id: `tool-${i}`,
-                  name: b.toolName || 'unknown',
-                  input: b.toolInput || '',
-                  output: b.toolOutput,
-                }))
-
-              const msg: ChatMessage = {
-                id: crypto.randomUUID(),
-                role: 'assistant',
-                content: textParts.join(''),
-                timestamp: Date.now(),
-                toolCalls: tools.length > 0 ? tools : undefined,
-              }
-              setMessages(m => [...m, msg])
+            if (prev.length === 0) return prev
+            const updated = prev.slice()
+            const last = { ...updated[updated.length - 1] }
+            if (last.type === 'tool_use') {
+              last.toolInput = (last.toolInput || '') + delta.partial_json
             }
-            return []
+            updated[updated.length - 1] = last
+            return updated
           })
-          setIsStreaming(false)
         }
+        break
+      }
+
+      case 'content_block_stop': {
+        setCurrentBlocks(prev => {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          if (last?.type === 'tool_use') {
+            last.isRunning = false
+          }
+          return updated
+        })
+        break
+      }
+
+      case 'message_stop': {
+        setCurrentBlocks(prev => {
+          if (prev.length > 0) {
+            const textParts = prev.filter(b => b.type === 'text').map(b => b.text || '')
+            const tools: ToolCallInfo[] = prev
+              .filter(b => b.type === 'tool_use')
+              .map((b, i) => ({
+                id: `tool-${i}`,
+                name: b.toolName || 'unknown',
+                input: b.toolInput || '',
+                output: b.toolOutput,
+              }))
+
+            const msg: ChatMessage = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: textParts.join(''),
+              timestamp: Date.now(),
+              toolCalls: tools.length > 0 ? tools : undefined,
+            }
+            setMessages(m => [...m, msg])
+          }
+          return []
+        })
+        setIsStreaming(false)
         break
       }
 
       case 'assistant': {
         // Complete assistant message (fallback)
-        const am = event.message
+        const am = ce.message
         if (am?.content) {
           const textParts = am.content.filter((b: ContentBlock) => b.type === 'text').map((b: ContentBlock) => b.text || '')
           const tools: ToolCallInfo[] = am.content
@@ -170,8 +190,8 @@ export function ChatView({ onSendMessage, streamEvents }: ChatViewProps) {
       case 'result':
         setIsStreaming(false)
         setCurrentBlocks([])
-        if (event.subtype === 'error') {
-          setError(event.result || 'Session error')
+        if ((ce as any).subtype === 'error') {
+          setError((ce as any).result || 'Session error')
         }
         break
 
@@ -182,18 +202,18 @@ export function ChatView({ onSendMessage, streamEvents }: ChatViewProps) {
         break
 
       case 'error':
-        setError(event.message || 'Unknown error')
+        setError((ce as any).message || 'Unknown error')
         setIsStreaming(false)
         break
 
       case 'raw':
       case 'stderr':
         // Show as system message
-        if (event.text && !event.text.includes('Downloading')) {
+        if ((ce as any).text && !(ce as any).text.includes('Downloading')) {
           setMessages(m => [...m, {
             id: crypto.randomUUID(),
             role: 'system',
-            content: event.text,
+            content: (ce as any).text,
             timestamp: Date.now(),
           }])
         }
@@ -212,6 +232,7 @@ export function ChatView({ onSendMessage, streamEvents }: ChatViewProps) {
       timestamp: Date.now(),
     }])
     setInput('')
+    setIsStreaming(true)
     onSendMessage(text)
 
     if (inputRef.current) {
