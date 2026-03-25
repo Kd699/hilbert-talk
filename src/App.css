@@ -374,6 +374,21 @@
   background: rgba(245, 158, 11, 0.25);
 }
 
+.image-button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.image-button:hover { color: var(--text-primary); }
+.image-button:disabled { opacity: 0.3; cursor: default; }
+.image-button svg { width: 20px; height: 20px; }
+
 .status-dot.pending {
   background: #fbbf24;
   animation: pulse-pending 1.5s ease-in-out infinite;

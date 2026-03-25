@@ -261,7 +261,6 @@ function App() {
       {view.name === 'local-chat' && (
         <LocalChatView
           sessionId={view.sessionId}
-          onBack={handleBack}
           onHandoverToVPS={(history) => {
             // Start a VPS session with local context injected
             const context = history.map(m => `${m.role}: ${m.content}`).join('\n').slice(-2000)
