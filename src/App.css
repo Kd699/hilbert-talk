@@ -331,6 +331,54 @@
   border-color: rgba(124, 111, 245, 0.3);
 }
 
+.session-card.pending {
+  border-style: dashed;
+  opacity: 0.7;
+  animation: pulse-pending 2s ease-in-out infinite;
+  cursor: default;
+}
+
+@keyframes pulse-pending {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.8; }
+}
+
+.local-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.local-chat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.handover-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.handover-btn:hover {
+  background: rgba(245, 158, 11, 0.25);
+}
+
+.status-dot.pending {
+  background: #fbbf24;
+  animation: pulse-pending 1.5s ease-in-out infinite;
+}
+
 .session-card-left {
   display: flex;
   align-items: center;
@@ -352,6 +400,104 @@
   font-family: 'JetBrains Mono', monospace;
   flex-shrink: 0;
   margin-left: 12px;
+}
+
+.chooser-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.chooser-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  width: 320px;
+  max-width: 90vw;
+}
+
+.chooser-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.chooser-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chooser-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  width: 100%;
+}
+
+.chooser-option:hover {
+  border-color: rgba(124, 111, 245, 0.4);
+  background: var(--bg-tertiary);
+}
+
+.chooser-icon {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.chooser-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.chooser-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.origin-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.origin-local {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.origin-vps {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.origin-cloud {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
 }
 
 /* Chat View */

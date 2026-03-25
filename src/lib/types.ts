@@ -1,9 +1,13 @@
+export type SessionOrigin = 'local' | 'vps' | 'cloud'
+
 export interface SessionMeta {
   id: string
   name: string
   createdAt: number
   lastActiveAt: number
   status: 'active' | 'resumable'
+  origin?: SessionOrigin
+  pending?: boolean
 }
 
 export interface ChatMessage {
@@ -36,7 +40,7 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: 'sessions_list'; sessions: SessionMeta[] }
   | { type: 'session_created'; sessionId: string; name: string }
-  | { type: 'session_resumed'; sessionId: string }
+  | { type: 'session_resumed'; sessionId: string; history?: Array<{role: string, content: string, timestamp?: number}> }
   | { type: 'session_stopped'; sessionId: string }
   | { type: 'stream_event'; event: StreamEvent }
   | { type: 'error'; message: string; code?: string }
@@ -77,3 +81,4 @@ export type View =
   | { name: 'login' }
   | { name: 'gallery' }
   | { name: 'chat'; sessionId: string }
+  | { name: 'local-chat'; sessionId: string }

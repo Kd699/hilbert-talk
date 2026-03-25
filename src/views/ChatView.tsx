@@ -5,6 +5,7 @@ import { renderContent } from '../lib/markdown'
 interface ChatViewProps {
   onSendMessage: (text: string) => void
   onStreamHandler: (handler: (event: StreamEvent) => void) => void
+  initialHistory?: Array<{role: string, content: string, timestamp?: number}>
 }
 
 interface ParsedBlock {
@@ -16,9 +17,23 @@ interface ParsedBlock {
   isRunning?: boolean
 }
 
-export function ChatView({ onSendMessage, onStreamHandler }: ChatViewProps) {
+export function ChatView({ onSendMessage, onStreamHandler, initialHistory }: ChatViewProps) {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
+
+  // Load history when initialHistory changes (session resume)
+  useEffect(() => {
+    if (!initialHistory?.length) {
+      setMessages([])
+      return
+    }
+    setMessages(initialHistory.map((m, i) => ({
+      id: `history-${i}`,
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+      timestamp: m.timestamp || Date.now(),
+    })))
+  }, [initialHistory])
   const [currentBlocks, setCurrentBlocks] = useState<ParsedBlock[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)

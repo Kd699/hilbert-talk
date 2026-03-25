@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { onAuthChange, getIdToken, signOut } from './lib/auth'
 import { HilbertSocket } from './lib/ws'
-import type { View, SessionMeta, ServerMessage, StreamEvent } from './lib/types'
+import type { View, SessionMeta, ServerMessage, StreamEvent, SessionOrigin } from './lib/types'
 import { LoginView } from './views/LoginView'
 import { GalleryView } from './views/GalleryView'
 import { ChatView } from './views/ChatView'
+import { LocalChatView } from './views/LocalChatView'
 import type { User } from 'firebase/auth'
 import './App.css'
 
@@ -88,14 +89,86 @@ function App() {
     }
   }, [view.name, wsStatus])
 
+  // Fetch remote CC sessions from Supabase (local Mac, cloud)
+  const [remoteSessions, setRemoteSessions] = useState<SessionMeta[]>([])
+  useEffect(() => {
+    if (view.name !== 'gallery') return
+    const SUPABASE_URL = 'https://aquysbccogwqloydoymz.supabase.co'
+    const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxdXlzYmNjb2d3cWxveWRveW16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NzY1NzYsImV4cCI6MjA4NTU1MjU3Nn0.IV08zf40TK-NPOB_OyTRPcCdRA9AxkNzhKV17JL3jAU'
+    const EMAIL = 'yebomnt@gmail.com'
+    fetch(`${SUPABASE_URL}/rest/v1/user_data?email=eq.${encodeURIComponent(EMAIL)}&select=cc_sessions`, {
+      headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}`, 'x-user-email': EMAIL },
+    })
+      .then(r => r.json())
+      .then(rows => {
+        const ccSessions = (rows?.[0]?.cc_sessions || []) as Array<{
+          id: string; name: string; type: string; status: string; lastSeen: string; lastMessage?: string
+        }>
+        setRemoteSessions(ccSessions.map(s => ({
+          id: `remote-${s.id}`,
+          name: s.name,
+          createdAt: new Date(s.lastSeen).getTime(),
+          lastActiveAt: new Date(s.lastSeen).getTime(),
+          status: (Date.now() - new Date(s.lastSeen).getTime() < 5 * 60_000 ? 'active' : 'resumable') as 'active' | 'resumable',
+          origin: s.type as SessionMeta['origin'],
+        })))
+      })
+      .catch(() => {})
+  }, [view.name])
+
   const handleNewSession = () => {
     socketRef.current?.send({ type: 'new_session' })
   }
 
+  const handleNewLocalSession = async () => {
+    const SUPABASE_URL = 'https://aquysbccogwqloydoymz.supabase.co'
+    const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxdXlzYmNjb2d3cWxveWRveW16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NzY1NzYsImV4cCI6MjA4NTU1MjU3Nn0.IV08zf40TK-NPOB_OyTRPcCdRA9AxkNzhKV17JL3jAU'
+    const EMAIL = 'yebomnt@gmail.com'
+    const headers = { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}`, 'x-user-email': EMAIL, 'Content-Type': 'application/json', Prefer: 'return=minimal' }
+
+    // Optimistic UI: add pending session immediately
+    const pendingId = `pending-${Date.now()}`
+    setRemoteSessions(prev => [{
+      id: pendingId,
+      name: 'Mac',
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+      status: 'resumable' as const,
+      origin: 'local' as SessionOrigin,
+      pending: true,
+    }, ...prev])
+
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_data?email=eq.${encodeURIComponent(EMAIL)}&select=cc_commands`, { headers })
+      const rows = await res.json()
+      const commands = rows?.[0]?.cc_commands || []
+      commands.push({ action: 'start_session', target: 'local', ts: new Date().toISOString(), id: crypto.randomUUID() })
+      await fetch(`${SUPABASE_URL}/rest/v1/user_data?email=eq.${encodeURIComponent(EMAIL)}`, {
+        method: 'PATCH', headers, body: JSON.stringify({ cc_commands: commands }),
+      })
+    } catch (e) {
+      console.error('[local session] failed:', e)
+      // Remove pending on failure
+      setRemoteSessions(prev => prev.filter(s => s.id !== pendingId))
+    }
+  }
+
   const handleSelectSession = (id: string) => {
-    const session = sessions.find(s => s.id === id)
+    // Local/remote sessions (from Supabase) have id prefixed with "remote-" or "pending-"
+    const allSessions = [
+      ...sessions.map(s => ({ ...s, origin: 'vps' as SessionOrigin })),
+      ...remoteSessions,
+    ]
+    const session = allSessions.find(s => s.id === id)
     setActiveSessionName(session?.name || 'Session')
-    socketRef.current?.send({ type: 'resume_session', sessionId: id })
+
+    if (session?.origin === 'local' || session?.origin === 'cloud') {
+      // Extract the Supabase session_id (strip "remote-" prefix from cc_sessions id)
+      const sbSessionId = id.replace('remote-', '')
+      setView({ name: 'local-chat', sessionId: sbSessionId })
+    } else {
+      socketRef.current?.send({ type: 'resume_session', sessionId: id })
+    }
   }
 
   const handleSendMessage = (text: string) => {
@@ -127,7 +200,7 @@ function App() {
       {/* Header */}
       <header className="header">
         <div className="header-left">
-          {view.name === 'chat' && (
+          {(view.name === 'chat' || view.name === 'local-chat') && (
             <button className="back-button" onClick={handleBack} title="Back to sessions">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -166,8 +239,12 @@ function App() {
 
       {view.name === 'gallery' && (
         <GalleryView
-          sessions={sessions}
+          sessions={[
+            ...sessions.map(s => ({ ...s, origin: 'vps' as SessionOrigin })),
+            ...remoteSessions,
+          ]}
           onNewSession={handleNewSession}
+          onNewLocalSession={handleNewLocalSession}
           onSelectSession={handleSelectSession}
           loading={sessionsLoading}
         />
@@ -178,6 +255,19 @@ function App() {
           onSendMessage={handleSendMessage}
           onStreamHandler={(handler) => { streamHandlerRef.current = handler }}
           initialHistory={initialHistory}
+        />
+      )}
+
+      {view.name === 'local-chat' && (
+        <LocalChatView
+          sessionId={view.sessionId}
+          onBack={handleBack}
+          onHandoverToVPS={(history) => {
+            // Start a VPS session with local context injected
+            const context = history.map(m => `${m.role}: ${m.content}`).join('\n').slice(-2000)
+            setInitialHistory([{ role: 'system', content: `Continuing from a local Mac session. Here's the recent context:\n\n${context}` }])
+            socketRef.current?.send({ type: 'new_session' })
+          }}
         />
       )}
     </div>
