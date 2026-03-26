@@ -120,36 +120,22 @@ function App() {
     socketRef.current?.send({ type: 'new_session' })
   }
 
-  const handleNewLocalSession = async () => {
-    const SUPABASE_URL = 'https://aquysbccogwqloydoymz.supabase.co'
-    const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxdXlzYmNjb2d3cWxveWRveW16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NzY1NzYsImV4cCI6MjA4NTU1MjU3Nn0.IV08zf40TK-NPOB_OyTRPcCdRA9AxkNzhKV17JL3jAU'
-    const EMAIL = 'yebomnt@gmail.com'
-    const headers = { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}`, 'x-user-email': EMAIL, 'Content-Type': 'application/json', Prefer: 'return=minimal' }
+  const handleNewLocalSession = () => {
+    // Find an existing online local session (cc-ht running in terminal)
+    const allSessions = [
+      ...sessions.map(s => ({ ...s, origin: 'vps' as SessionOrigin })),
+      ...remoteSessions,
+    ]
+    const localOnline = allSessions.find(s => s.origin === 'local' && s.status === 'active')
 
-    // Optimistic UI: add pending session immediately
-    const pendingId = `pending-${Date.now()}`
-    setRemoteSessions(prev => [{
-      id: pendingId,
-      name: 'Mac',
-      createdAt: Date.now(),
-      lastActiveAt: Date.now(),
-      status: 'resumable' as const,
-      origin: 'local' as SessionOrigin,
-      pending: true,
-    }, ...prev])
-
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_data?email=eq.${encodeURIComponent(EMAIL)}&select=cc_commands`, { headers })
-      const rows = await res.json()
-      const commands = rows?.[0]?.cc_commands || []
-      commands.push({ action: 'start_session', target: 'local', ts: new Date().toISOString(), id: crypto.randomUUID() })
-      await fetch(`${SUPABASE_URL}/rest/v1/user_data?email=eq.${encodeURIComponent(EMAIL)}`, {
-        method: 'PATCH', headers, body: JSON.stringify({ cc_commands: commands }),
-      })
-    } catch (e) {
-      console.error('[local session] failed:', e)
-      // Remove pending on failure
-      setRemoteSessions(prev => prev.filter(s => s.id !== pendingId))
+    if (localOnline) {
+      // cc-ht is running -- open its chat directly
+      const sbSessionId = localOnline.id.replace('remote-', '')
+      setActiveSessionName(localOnline.name || 'Mac')
+      setView({ name: 'local-chat', sessionId: sbSessionId })
+    } else {
+      // No cc-ht running -- show hint
+      alert('No local session found. Run cc-ht in your terminal first.')
     }
   }
 

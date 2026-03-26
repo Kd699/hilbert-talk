@@ -46,7 +46,7 @@ export function GalleryView({ sessions, onNewSession, onNewLocalSession, onSelec
               <button className="chooser-option" onClick={() => { setShowChooser(false); onNewLocalSession() }}>
                 <span className="chooser-icon origin-local">Mac</span>
                 <span className="chooser-label">Local Mac</span>
-                <span className="chooser-hint">Starts on your MacBook</span>
+                <span className="chooser-hint">Run cc-ht in terminal first</span>
               </button>
             </div>
           </div>
@@ -76,7 +76,7 @@ export function GalleryView({ sessions, onNewSession, onNewLocalSession, onSelec
             >
               <div className="session-card-left">
                 <span className={`status-dot ${s.pending ? 'pending' : s.status}`} />
-                <span className="session-name">{s.pending ? 'Starting on Mac...' : s.name}</span>
+                <span className="session-name">{s.pending ? 'Run cc-ht in terminal' : s.name}</span>
                 {s.origin && (
                   <span className={`origin-badge origin-${s.origin}`}>
                     {s.origin === 'local' ? 'Mac' : s.origin === 'vps' ? 'VPS' : 'Cloud'}
